@@ -1,0 +1,59 @@
+# Byte-compiled / optimized / DLL files (Python)
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+
+# Environments (Python)
+.env
+.envrc
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+=
+# Jupyter/IPython
+.ipynb_checkpoints
+profile_default/
+ipython_config.py
+
+
+
+# Dependency dirs (Node/React frontend)
+**/node_modules/
+**/bower_components/
+**/jspm_packages/
+
+# Logs (Node/Python)
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+
+
+# Optional npm cache
+.npm
+.eslintcache
+.stylelintcache
+
+# Build outputs (React)
+build/
+dist/
+.next/
+.nuxt/
+.svelte-kit/
+.output/
+.vuepress/dist
+**/dist
+**/build
+
+# dotenv files
+.env*.local
+!.env.example
