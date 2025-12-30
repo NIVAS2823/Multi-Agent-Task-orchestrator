@@ -1,5 +1,7 @@
 from app.graphs.state import AgentState
 from app.llm.factory import get_llm
+from app.schemas.execution import ExecutionOutput
+from pydantic import ValidationError
 
 
 def executor_node(state: AgentState) -> dict:
@@ -8,7 +10,7 @@ def executor_node(state: AgentState) -> dict:
     step = state["current_step"]
     critique = state.get("critique")
 
-    # BUILD FULL CONTEXT
+  
     context = f"ORIGINAL TASK:\n{state['user_goal']}\n\n"
 
     if state.get("execution_history"):
@@ -22,10 +24,11 @@ def executor_node(state: AgentState) -> dict:
     if critique:
         context += f"\n=== CRITIC FEEDBACK (MUST FIX) ===\n{critique}\n"
 
+   
     word_limit_instruction = ""
     if "50" in step:
         word_limit_instruction = (
-            "\n⚠️ WORD COUNT RULE:\n"
+            "\n WORD COUNT RULE:\n"
             "Your response MUST be between 45 and 55 words.\n"
             "Responses outside this range are INVALID.\n"
         )
@@ -43,15 +46,29 @@ CRITICAL INSTRUCTIONS:
 5. Be concise but complete
 {word_limit_instruction}
 
-Now produce the corrected execution result:
+Return your answer in the following structured format:
+
+- content: string (final answer)
+- word_count: integer (number of words in content)
 """
 
-    result = llm.invoke(prompt)
-    word_count = len(result.content.split())
+
+    try:
+        structured_llm = llm.with_structured_output(ExecutionOutput)
+        result: ExecutionOutput = structured_llm.invoke(prompt)
+
+    except ValidationError as e:
+        print("\n❌ EXECUTION OUTPUT VALIDATION FAILED")
+        print(e)
+
+        return {
+        "execution_result": None,
+        "schema_error": str(e),
+    }
 
     print("\n" + "=" * 60)
     print(f"EXECUTOR - Step {state.get('current_step_index', 0) + 1}")
-    print(f"Word Count: {word_count}")
+    print(f"Word Count: {result.word_count}")
     print("=" * 60)
     print(result.content)
     print("=" * 60 + "\n")
