@@ -5,7 +5,10 @@ langsmith
 fastapi
 uvicorn
 pydantic
+pydantic-settings
 python-dotenv
 langchain-openai
 langchain-google-genai
 langchain-groq
+motor 
+pymongo 

@@ -4,7 +4,7 @@ from app.agents.critic import critic_node
 from app.agents.supervisor import supervisor_node
 from app.agents.planner import planner_node
 from app.agents.executor import executor_node
-from app.agents.researcher import researcher_node
+# from app.agents.researcher import researcher_node
 
 
 def build_graph():
@@ -13,7 +13,7 @@ def build_graph():
 
     graph.add_node("supervisor",supervisor_node)
     graph.add_node("planner",planner_node)
-    graph.add_node("researcher",researcher_node)
+    # graph.add_node("researcher",researcher_node)
     graph.add_node("executor",executor_node)
     graph.add_node("critic",critic_node)
 
@@ -21,7 +21,7 @@ def build_graph():
     graph.set_entry_point("supervisor")
 
     graph.add_edge("planner","supervisor")
-    graph.add_edge("researcher","supervisor")
+    # graph.add_edge("researcher","supervisor")
     graph.add_edge("executor","supervisor")
     graph.add_edge("critic","supervisor")
 
@@ -33,7 +33,7 @@ def build_graph():
         route,
         {
             "planner":"planner",
-            "researcher":"researcher",
+            # "researcher":"researcher",
             "executor":"executor",
             "critic":"critic",
             "supervisor": "supervisor",

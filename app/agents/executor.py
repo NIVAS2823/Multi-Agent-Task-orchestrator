@@ -7,14 +7,14 @@ from pydantic import ValidationError
 def executor_node(state: AgentState) -> dict:
     llm = get_llm(temperature=0.2)
 
-    step = state["current_step"]
+    step = state.get("current_step")
     critique = state.get("critique")
 
-  
+    # ---------------- CONTEXT ----------------
     context = f"ORIGINAL TASK:\n{state['user_goal']}\n\n"
 
     if state.get("execution_history"):
-        context += "=== PREVIOUS EXECUTIONS ===\n"
+        context += "\n=== PREVIOUS EXECUTIONS ===\n"
         for i, past in enumerate(state["execution_history"]):
             context += f"\nAttempt {i + 1}:\n{past}\n"
             context += "-" * 60 + "\n"
@@ -24,59 +24,55 @@ def executor_node(state: AgentState) -> dict:
     if critique:
         context += f"\n=== CRITIC FEEDBACK (MUST FIX) ===\n{critique}\n"
 
-   
-    word_limit_instruction = ""
-    if "50" in step:
-        word_limit_instruction = (
-            "\n WORD COUNT RULE:\n"
-            "Your response MUST be between 45 and 55 words.\n"
-            "Responses outside this range are INVALID.\n"
-        )
-
+    # ---------------- PROMPT ----------------
     prompt = f"""
 You are an execution agent.
 
 {context}
 
 CRITICAL INSTRUCTIONS:
-1. Use previous executions as context
+1. Fully COMPLETE the CURRENT STEP
 2. Fix ALL issues mentioned in critic feedback
-3. Fully complete the CURRENT STEP
+3. Do NOT ask questions or defer decisions
 4. Do NOT repeat previous failed answers
-5. Be concise but complete
-{word_limit_instruction}
+5. Be clear, direct, and decisive
 
 Return your answer in the following structured format:
 
-- content: string (final answer)
-- word_count: integer (number of words in content)
+- content: string
 """
-
 
     try:
         structured_llm = llm.with_structured_output(ExecutionOutput)
         result: ExecutionOutput = structured_llm.invoke(prompt)
 
     except ValidationError as e:
-        print("\n❌ EXECUTION OUTPUT VALIDATION FAILED")
-        print(e)
-
+        # Schema failure → retryable, Supervisor will handle retries
         return {
-        "execution_result": None,
-        "schema_error": str(e),
-    }
+            "execution_result": None,
+            "schema_error": str(e),
+            "fsm_state": "execute",
+        }
 
+    # ---------------- LOGGING ----------------
     print("\n" + "=" * 60)
     print(f"EXECUTOR - Step {state.get('current_step_index', 0) + 1}")
-    print(f"Word Count: {result.word_count}")
-    print("=" * 60)
     print(result.content)
     print("=" * 60 + "\n")
 
     updated_history = state.get("execution_history", []).copy()
     updated_history.append(result.content)
 
+    # ---------------- FSM RETURN ----------------
     return {
+        # ---- Output ----
         "execution_result": result.content,
+        "last_executor_output": result.content,
         "execution_history": updated_history,
+
+        # ---- FSM ----
+        "fsm_state": "critique",
+
+        # ---- Cleanup ----
+        "schema_error": None,
     }

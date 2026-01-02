@@ -1,69 +1,159 @@
+from enum import Enum
 from app.graphs.state import AgentState
+from app.utils.logger import get_logger
+
+logger = get_logger(__name__)
+
+MAX_RETRIES = 3
+
+
+class SupervisorState(str, Enum):
+    START = "start"
+    PLAN = "plan"
+    EXECUTE = "execute"
+    CRITIQUE = "critique"
+    ADVANCE = "advance"
+    COMPLETE = "complete"
+    FAIL = "fail"
 
 
 def supervisor_node(state: AgentState) -> dict:
+    # -------------------- STATE EXTRACTION --------------------
+    events = state.get("events", [])
     plan = state.get("plan") or []
-    is_approved = state.get("is_approved")
+    step_index = state.get("current_step_index", 0)
+    retry_count = state.get("retry_count", 0)
+    fsm_state = state.get("fsm_state", SupervisorState.START)
+
+    current_step = state.get("current_step")
+
     execution_result = state.get("execution_result")
     critique = state.get("critique")
-    retry_count = state.get("retry_count", 0)
-    current_step_index = state.get("current_step_index", 0)
+    is_approved = state.get("is_approved")
 
-    print(f"\n[SUPERVISOR] Current step: {current_step_index + 1}/{len(plan)}, Retry: {retry_count}")
+    last_output = state.get("last_executor_output")
 
-   
-    if retry_count >= 3:  # Increased to 3 for more attempts
-        final = "\n\n".join(state.get("execution_history", []))
-        return {
-            "next_agent": "end",
-            "final_output": f"Task stopped after repeated failed executions.\n\nPartial results:\n{final}"
-        }
+    # -------------------- LOGGING HELPER --------------------
+    def log(action: str, detail: str | None = None):
+        msg = f"[SUPERVISOR][{fsm_state}] {action}"
+        if detail:
+            msg += f" - {detail}"
+        logger.info(msg)
 
-    # 1️⃣ INITIAL — no plan yet
-    if not plan:
-        return {"next_agent": "planner"}
-
-    # 2️⃣ EXECUTION REQUIRED — no result yet
-    if execution_result is None:
-        return {"next_agent": "executor"}
-
-    # 3️⃣ CRITIQUE REQUIRED — execution exists but not reviewed
-    if critique is None:
-        return {"next_agent": "critic"}
-
-    # 4️⃣ STEP APPROVED — advance to next step
-    if is_approved is True:
-        next_index = current_step_index + 1
-        
-        # Check if all steps complete
-        if next_index >= len(plan):
-            final = "\n\n".join(state.get("execution_history", []))
-            return {
-                "next_agent": "end",
-                "final_output": final
+        events.append(
+            {
+                "agent": "supervisor",
+                "action": action,
+                "detail": detail,
+                "step_index": step_index,
             }
-        
-        # Move to next step
+        )
+
+    # -------------------- TERMINAL RETRY GUARD --------------------
+    if retry_count >= MAX_RETRIES:
+        log("retry_limit_reached", "Forcing graceful completion")
+
         return {
-            "current_step": plan[next_index],
-            "current_step_index": next_index,
-            "execution_result": None,
-            "critique": None,
-            "is_approved": None,
-            "retry_count": 0,  # Reset on success
+            "events": events,
+            "fsm_state": SupervisorState.COMPLETE,
+            "next_agent": "end",
+            "final_output": (
+                last_output
+                or execution_result
+                or "Task stopped after repeated failures. Partial output returned."
+            ),
+        }
+
+    # -------------------- FSM CORRECTION GUARD --------------------
+    # Safety net: if plan exists but FSM somehow stayed in START
+    if fsm_state == SupervisorState.START and plan:
+        logger.warning(
+            "FSM stuck in START with existing plan — correcting to EXECUTE"
+        )
+        fsm_state = SupervisorState.EXECUTE
+
+    # ======================== FSM ========================
+
+    # -------- START → PLAN --------
+    if fsm_state == SupervisorState.START:
+        log("start")
+        return {
+            "events": events,
+            "fsm_state": SupervisorState.PLAN,
+            "next_agent": "planner",
+        }
+
+    # -------- PLAN → EXECUTE --------
+    if fsm_state == SupervisorState.PLAN:
+        log("plan_ready")
+        return {
+            "events": events,
+            "fsm_state": SupervisorState.EXECUTE,
+            "current_step": plan[step_index],
             "next_agent": "executor",
         }
 
-    # 5️⃣ STEP FAILED — retry executor (bounded)
-    if is_approved is False:
-        print(f"--- RETRY {retry_count + 1}: {critique} ---")
+    # -------- EXECUTE → CRITIQUE --------
+    if fsm_state == SupervisorState.EXECUTE:
+        log("executing", current_step)
         return {
-            "execution_result": None,
-            "critique": None,
-            "is_approved": None,
+            "events": events,
+            "fsm_state": SupervisorState.CRITIQUE,
+            "next_agent": "critic",
+        }
+
+    # -------- CRITIQUE → ADVANCE / RETRY --------
+    if fsm_state == SupervisorState.CRITIQUE:
+
+        if is_approved is True:
+            log("approved")
+            return {
+                "events": events,
+                "fsm_state": SupervisorState.ADVANCE,
+            }
+
+        log("rejected", critique)
+        return {
+            "events": events,
+            "fsm_state": SupervisorState.EXECUTE,
             "retry_count": retry_count + 1,
+            "execution_result": None,
+            "critique": None,
+            "is_approved": None,
             "next_agent": "executor",
         }
 
-    # 6️⃣ SAFETY NET
-    return {"next_agent": "end"}
+    # -------- ADVANCE → NEXT STEP / COMPLETE --------
+    if fsm_state == SupervisorState.ADVANCE:
+        next_index = step_index + 1
+
+        if next_index >= len(plan):
+            log("complete_all_steps")
+            return {
+                "events": events,
+                "fsm_state": SupervisorState.COMPLETE,
+                "next_agent": "end",
+                "final_output": last_output or execution_result,
+            }
+
+        log("advance_step", f"{next_index + 1}/{len(plan)}")
+        return {
+            "events": events,
+            "fsm_state": SupervisorState.EXECUTE,
+            "current_step_index": next_index,
+            "current_step": plan[next_index],
+            "retry_count": 0,
+            "execution_result": None,
+            "critique": None,
+            "is_approved": None,
+            "next_agent": "executor",
+        }
+
+    # -------------------- FALLBACK --------------------
+    log("unexpected_state", str(fsm_state))
+    return {
+        "events": events,
+        "fsm_state": SupervisorState.FAIL,
+        "next_agent": "end",
+        "final_output": last_output or "Unexpected termination. Partial output returned.",
+    }

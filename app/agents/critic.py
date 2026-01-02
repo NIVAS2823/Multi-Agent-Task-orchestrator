@@ -4,56 +4,70 @@ from pydantic import BaseModel, Field
 
 
 class CriticOutput(BaseModel):
-    approved: bool = Field(description="Whether the current step was completed correctly")
-    feedback: str = Field(description="Brief explanation of the decision")
+    approved: bool = Field(
+        description="Whether the current step was completed correctly"
+    )
+    feedback: str = Field(
+        description="Brief explanation of the decision"
+    )
 
 
 def critic_node(state: AgentState) -> dict:
     llm = get_llm(temperature=0)
 
-    # Show critic the context too
+    result_text = state.get("execution_result", "")
+    current_step = state.get("current_step", "")
+
+    # -------------------- DETERMINISTIC GUARDS --------------------
+    if not result_text or not result_text.strip():
+        return {
+            "critique": "Executor produced no output for this step.",
+            "is_approved": False,
+        }
+
+    # -------------------- OPTIONAL CONTEXT --------------------
     context = ""
     if state.get("execution_history"):
-        context = f"Previous steps completed: {len(state['execution_history']) - 1}\n"
+        completed_steps = max(len(state["execution_history"]) - 1, 0)
+        context = f"Previous steps completed successfully: {completed_steps}\n"
 
-    # Count words in execution result
-    result_text = state['execution_result']
-    word_count = len(result_text.split())
-
-    prompt = f"""You are a quality control agent.
+    # -------------------- PROMPT --------------------
+    prompt = f"""
+You are a quality control agent (critic).
 
 {context}
-CURRENT STEP REQUIREMENT: {state['current_step']}
+
+CURRENT STEP REQUIREMENT:
+{current_step}
 
 EXECUTION RESULT TO EVALUATE:
 {result_text}
 
-WORD COUNT: {word_count} words
+EVALUATION RULES (VERY IMPORTANT):
+1. APPROVE only if the executor clearly COMPLETED the step.
+2. REJECT if the executor:
+   - Avoided making a decision
+   - Gave generic advice instead of an answer
+   - Asked questions instead of completing the task
+   - Ignored explicit requirements in the step
+3. Do NOT judge based on length, formatting, or style.
+4. Be practical, not perfectionist.
+5. Executor is allowed to use general knowledge when completing steps.
 
-EVALUATION CRITERIA:
-1. Did the executor actually COMPLETE the step (not just ask for information)?
-2. If the step mentions a word limit (e.g., "50 words"), check if the result is reasonably close:
-   - For 50 words: Accept 40-60 words (±20% is reasonable)
-   - For 100 words: Accept 80-120 words
-   - Slightly over/under is ACCEPTABLE - be lenient
-3. Does the result make sense and provide useful information?
-
-IMPORTANT: 
-- If the executor says "please provide context" or asks questions, mark as NOT APPROVED
-- For word limits, be LENIENT - a few words over is perfectly fine
-- Focus on whether the task is COMPLETE, not perfectionism
-
-Provide your evaluation:"""
+Respond with:
+- approved: true or false
+- feedback: one short sentence explaining why
+"""
 
     critique = llm.with_structured_output(CriticOutput).invoke(prompt)
 
-    print(f"\n{'='*60}")
-    print(f"CRITIC EVALUATION")
-    print(f"{'='*60}")
-    print(f"Word Count: {word_count}")
+    # -------------------- LOGGING --------------------
+    print("\n" + "=" * 60)
+    print("CRITIC EVALUATION")
+    print("=" * 60)
     print(f"Approved: {critique.approved}")
     print(f"Feedback: {critique.feedback}")
-    print(f"{'='*60}\n")
+    print("=" * 60 + "\n")
 
     return {
         "critique": critique.feedback,
