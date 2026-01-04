@@ -1,6 +1,7 @@
 # Models package initialization
 # Import all models for easy access
 
+# Session models
 from app.models.session import (
     Message,
     Session,
@@ -8,15 +9,36 @@ from app.models.session import (
     SessionUpdate,
     SessionResponse,
     MessageCreate,
-    PyObjectId
+    PyObjectId as SessionPyObjectId
+)
+
+# User models (NEW)
+from app.models.user import (
+    User,
+    UserCreate,
+    UserLogin,
+    UserResponse,
+    Token,
+    TokenData,
+    PyObjectId as UserPyObjectId
 )
 
 __all__ = [
+    # Session models
     "Message",
     "Session",
     "SessionCreate",
     "SessionUpdate",
     "SessionResponse",
     "MessageCreate",
-    "PyObjectId"
+    "SessionPyObjectId",
+    
+    # User models
+    "User",
+    "UserCreate",
+    "UserLogin",
+    "UserResponse",
+    "Token",
+    "TokenData",
+    "UserPyObjectId",
 ]

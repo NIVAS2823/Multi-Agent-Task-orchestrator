@@ -12,3 +12,11 @@ langchain-google-genai
 langchain-groq
 motor 
 pymongo 
+
+python-jose[cryptography]  # JWT token creation and verification
+passlib[bcrypt]>=1.7.4
+bcrypt==4.0.1
+python-multipart           # For form data
+httpx                      # For Google OAuth API calls
+email-validator>=2.0
+pydantic[email]

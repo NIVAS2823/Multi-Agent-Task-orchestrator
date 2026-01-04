@@ -1,30 +1,28 @@
 """
 Main API Routes
 
-Handles execution of multi-agent tasks.
-Sessions are ALWAYS created server-side (GPT-style).
+Handles execution of multi-agent tasks with authentication.
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
 from typing import List
 
 from app.graphs.builder import build_graph
 from app.graphs.state import AgentState, AgentEvent
 from app.services.session_service import session_service
+from app.models.user import User  # NEW
+from app.api.dependencies import get_current_user  # NEW
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
 router = APIRouter()
 
-# Build agent graph once at startup
 logger.info("🔧 Building agent graph...")
 graph = build_graph()
 logger.info("✅ Agent graph built successfully")
 
-
-# -------------------- REQUEST / RESPONSE MODELS --------------------
 
 class RunRequest(BaseModel):
     user_goal: str = Field(
@@ -40,35 +38,40 @@ class RunResponse(BaseModel):
     session_id: str
 
 
-# -------------------- ROUTE --------------------
-
 @router.post("/run", response_model=RunResponse)
-async def run_agent(request: RunRequest):
+async def run_agent(
+    request: RunRequest,
+    current_user: User = Depends(get_current_user)  # NEW: Require authentication
+):
     """
-    Execute the multi-agent workflow.
-
-    Behavior (GPT-style):
-    - ALWAYS creates a new session
-    - Client never supplies session_id
-    - MongoDB owns ID generation
+    Execute the multi-agent workflow (PROTECTED)
+    
+    Requires: Valid JWT token in Authorization header
+    
+    Behavior:
+    - Creates a new session linked to the authenticated user
+    - Executes multi-agent workflow
+    - Saves conversation to user's session history
     """
 
     try:
         logger.info("=" * 80)
-        logger.info(f"🎯 New task received: {request.user_goal[:100]}")
+        logger.info(f"🎯 Task from user {current_user.username}: {request.user_goal[:100]}")
         logger.info("=" * 80)
 
-        # -------------------- CREATE SESSION --------------------
         title = (
             request.user_goal[:50] + "..."
             if len(request.user_goal) > 50
             else request.user_goal
         )
 
-        session_id = await session_service.create_session(title=title)
-        logger.info(f"📝 Created new session: {session_id}")
+        # Create session linked to user
+        session_id = await session_service.create_session(
+            title=title,
+            user_id=str(current_user.id)  # NEW: Link to user
+        )
+        logger.info(f"📝 Created session for user {current_user.username}: {session_id}")
 
-        # -------------------- SAVE USER MESSAGE --------------------
         user_saved = await session_service.add_message(
             session_id=session_id,
             role="user",
@@ -83,7 +86,6 @@ async def run_agent(request: RunRequest):
 
         logger.info("💬 User message saved")
 
-        # -------------------- INITIAL AGENT STATE --------------------
         initial_state: AgentState = {
             "user_goal": request.user_goal,
             "plan": [],
@@ -103,7 +105,6 @@ async def run_agent(request: RunRequest):
         logger.info("🤖 Starting multi-agent execution...")
         logger.info("-" * 80)
 
-        # -------------------- EXECUTE GRAPH --------------------
         result = graph.invoke(initial_state)
 
         logger.info("-" * 80)
@@ -118,7 +119,6 @@ async def run_agent(request: RunRequest):
                 detail="Agent execution produced no output",
             )
 
-        # -------------------- SAVE ASSISTANT MESSAGE --------------------
         assistant_saved = await session_service.add_message(
             session_id=session_id,
             role="assistant",
@@ -139,7 +139,7 @@ async def run_agent(request: RunRequest):
         logger.info("💬 Assistant response saved")
 
         logger.info("=" * 80)
-        logger.info("🎉 Task completed successfully")
+        logger.info(f"🎉 Task completed for {current_user.username}")
         logger.info(f"📝 Session ID: {session_id}")
         logger.info(f"📊 Events: {len(events)}")
         logger.info("=" * 80)

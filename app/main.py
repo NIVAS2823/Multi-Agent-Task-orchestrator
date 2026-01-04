@@ -1,7 +1,7 @@
 """
 Multi-Agent Task Orchestration System - Main Application
 
-FastAPI application with MongoDB session management and logging.
+FastAPI application with MongoDB session management, logging, and authentication.
 """
 
 from fastapi import FastAPI
@@ -11,13 +11,12 @@ from dotenv import load_dotenv
 
 from app.api.routes import router
 from app.api.session_routes import router as session_router
+from app.api.auth_routes import router as auth_router  # NEW
 from app.database.mongodb import connect_to_mongo, close_mongo_connection
 from app.utils.logger import setup_logging, get_logger
 
-# Load environment variables from .env file
 load_dotenv()
 
-# Setup logging system
 setup_logging()
 logger = get_logger(__name__)
 
@@ -31,13 +30,8 @@ async def lifespan(app: FastAPI):
     - Startup: Initialize MongoDB connection and logging
     - Shutdown: Close MongoDB connection gracefully
     """
-    # # ===== STARTUP =====
-    # logger.info("=" * 80)
-    # logger.info("🚀 Starting Multi-Agent Task Orchestration System")
-    # logger.info("=" * 80)
     
     try:
-        # Connect to MongoDB
         await connect_to_mongo()
         logger.info("✅ All systems initialized successfully")
         
@@ -47,13 +41,11 @@ async def lifespan(app: FastAPI):
     
     yield
     
-    # ===== SHUTDOWN =====
     logger.info("=" * 80)
     logger.info("🛑 Shutting down Multi-Agent Task Orchestration System")
     logger.info("=" * 80)
     
     try:
-        # Close MongoDB connection
         await close_mongo_connection()
         logger.info("✅ System shutdown completed successfully")
         
@@ -63,20 +55,18 @@ async def lifespan(app: FastAPI):
     logger.info("👋 Goodbye!")
 
 
-# Create FastAPI application
 app = FastAPI(
     title="Multi-Agent Task Orchestration System",
-    description="LangGraph-powered Agentic AI backend with session management and logging",
-    version="2.0.0",
+    description="LangGraph-powered Agentic AI backend with session management, logging, and authentication",
+    version="3.0.0",  # Updated version
     lifespan=lifespan,
     docs_url="/docs",
     redoc_url="/redoc"
 )
 
-# Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # TODO: Update this in production to specific origins
+    allow_origins=["*"],  # Update in production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -89,34 +79,39 @@ async def root():
     logger.info("📍 Root endpoint accessed")
     return {
         "message": "Multi-Agent Task Orchestration System",
-        "version": "2.0.0",
+        "version": "3.0.0",
         "status": "running",
         "docs": "/docs",
-        "health": "/health"
+        "health": "/health",
+        "auth": "/api/auth"
     }
 
 
 @app.get("/health")
 async def health():
     """
-    Health check endpoint
+    Health check endpoint - Public
     
     Returns system status and version information
     """
     logger.debug("🏥 Health check requested")
     return {
         "status": "ok",
-        "version": "2.0.0",
+        "version": "3.0.0",
         "message": "System is running normally"
     }
 
 
 # Include API routers
+app.include_router(auth_router, prefix="/api")      # NEW: Auth routes
 app.include_router(router, prefix="/api")
 app.include_router(session_router, prefix="/api")
 
 # logger.info("📡 API routes registered:")
-# logger.info("   - /api/run (POST) - Execute multi-agent task")
-# logger.info("   - /api/sessions/ (GET, POST) - Manage sessions")
-# logger.info("   - /api/sessions/{id} (GET, PATCH, DELETE) - Session operations")
+# logger.info("   - /api/auth/register (POST) - User registration")
+# logger.info("   - /api/auth/login (POST) - User login")
+# logger.info("   - /api/auth/me (GET) - Current user info")
+# logger.info("   - /api/auth/google/login (GET) - Google OAuth")
+# logger.info("   - /api/run (POST) - Execute task [PROTECTED]")
+# logger.info("   - /api/sessions/ (GET, POST) - Manage sessions [PROTECTED]")
 # logger.info("=" * 80)

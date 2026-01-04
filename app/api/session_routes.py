@@ -1,164 +1,61 @@
 """
 Session API Routes
 
-This module provides RESTful API endpoints for managing conversation sessions:
-- POST /sessions/ - Create a new session
-- GET /sessions/ - List all sessions
-- GET /sessions/{id} - Get specific session with messages
-- PATCH /sessions/{id} - Update session metadata
-- DELETE /sessions/{id} - Delete a session
+Manages conversation sessions with user authentication.
 """
 
-from fastapi import APIRouter, HTTPException, Query
-from typing import List, Optional
-from app.models.session import (
-    SessionCreate, 
-    SessionUpdate, 
-    SessionResponse, 
-    Session
-)
+from fastapi import APIRouter, HTTPException, Depends
+from typing import List
+from app.models.session import SessionUpdate, SessionResponse, Session
+from app.models.user import User  # NEW
 from app.services.session_service import session_service
+from app.api.dependencies import get_current_user  # NEW
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-# Create router with prefix and tags
 router = APIRouter(prefix="/sessions", tags=["Sessions"])
-
-
-@router.post("/", response_model=dict, status_code=201)
-async def create_session(session_data: SessionCreate):
-    """
-    Create a new conversation session
-    
-    Args:
-        session_data: Session creation data (title, user_id)
-        
-    Returns:
-        dict: Contains session_id and success message
-        
-    Example:
-        POST /api/sessions/
-        {
-            "title": "My AI Assistant Session",
-            "user_id": "user123"
-        }
-        
-        Response:
-        {
-            "session_id": "507f1f77bcf86cd799439011",
-            "message": "Session created successfully"
-        }
-    """
-    try:
-        logger.info(f"📝 Creating new session: '{session_data.title}'")
-        
-        session_id = await session_service.create_session(
-            title=session_data.title,
-            user_id=session_data.user_id
-        )
-        
-        return {
-            "session_id": session_id, 
-            "message": "Session created successfully"
-        }
-        
-    except Exception as e:
-        logger.error(f"❌ Error creating session: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=500, 
-            detail=f"Failed to create session: {str(e)}"
-        )
 
 
 @router.get("/", response_model=List[SessionResponse])
 async def list_sessions(
-    user_id: Optional[str] = Query(None, description="Filter by user ID"),
-    limit: int = Query(50, ge=1, le=100, description="Maximum number of sessions")
+    current_user: User = Depends(get_current_user),  # NEW: Require auth
+    limit: int = 50
 ):
     """
-    List all conversation sessions
+    List user's conversation sessions (PROTECTED)
     
-    Args:
-        user_id: Optional filter by user ID
-        limit: Maximum number of sessions to return (1-100, default: 50)
-        
-    Returns:
-        List of SessionResponse objects with session summaries
-        
-    Example:
-        GET /api/sessions/?limit=10
-        
-        Response:
-        [
-            {
-                "id": "507f1f77bcf86cd799439011",
-                "title": "Sales Analysis Discussion",
-                "created_at": "2024-01-15T10:30:00",
-                "updated_at": "2024-01-15T10:35:00",
-                "message_count": 4,
-                "last_message": "Here's the analysis..."
-            }
-        ]
+    Returns only sessions belonging to the authenticated user
     """
     try:
-        logger.info(f"📋 Listing sessions (user_id={user_id}, limit={limit})")
+        logger.info(f"📋 Listing sessions for user: {current_user.username}")
         
+        # Get only user's sessions
         sessions = await session_service.list_sessions(
-            user_id=user_id, 
+            user_id=str(current_user.id),  # NEW: Filter by user
             limit=limit
         )
         
-        logger.info(f"✅ Retrieved {len(sessions)} sessions")
+        logger.info(f"✅ Retrieved {len(sessions)} sessions for {current_user.username}")
         return sessions
         
     except Exception as e:
-        logger.error(f"❌ Error listing sessions: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=500, 
-            detail=f"Failed to list sessions: {str(e)}"
-        )
+        logger.error(f"❌ Error listing sessions: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/{session_id}", response_model=Session)
-async def get_session(session_id: str):
+async def get_session(
+    session_id: str,
+    current_user: User = Depends(get_current_user)  # NEW: Require auth
+):
     """
-    Get a specific session with all messages
+    Get a specific session with all messages (PROTECTED)
     
-    Args:
-        session_id: The session identifier
-        
-    Returns:
-        Complete Session object with all messages
-        
-    Raises:
-        404: If session not found
-        
-    Example:
-        GET /api/sessions/507f1f77bcf86cd799439011
-        
-        Response:
-        {
-            "id": "507f1f77bcf86cd799439011",
-            "title": "Sales Analysis Discussion",
-            "messages": [
-                {
-                    "role": "user",
-                    "content": "Analyze Q4 sales",
-                    "timestamp": "2024-01-15T10:30:00"
-                },
-                {
-                    "role": "assistant",
-                    "content": "Here's the analysis...",
-                    "timestamp": "2024-01-15T10:32:00"
-                }
-            ],
-            "created_at": "2024-01-15T10:30:00",
-            "updated_at": "2024-01-15T10:35:00"
-        }
+    Only returns session if it belongs to the authenticated user
     """
     try:
-        logger.info(f"📖 Fetching session: {session_id}")
+        logger.info(f"📖 Fetching session: {session_id} for user: {current_user.username}")
         
         session = await session_service.get_session(session_id)
         
@@ -167,6 +64,17 @@ async def get_session(session_id: str):
             raise HTTPException(
                 status_code=404, 
                 detail=f"Session not found: {session_id}"
+            )
+        
+        # NEW: Verify session belongs to user
+        if session.user_id != str(current_user.id):
+            logger.warning(
+                f"⚠️ User {current_user.username} attempted to access session {session_id} "
+                f"owned by user {session.user_id}"
+            )
+            raise HTTPException(
+                status_code=403,
+                detail="You don't have permission to access this session"
             )
         
         logger.info(
@@ -188,44 +96,48 @@ async def get_session(session_id: str):
 
 
 @router.patch("/{session_id}", response_model=dict)
-async def update_session(session_id: str, update_data: SessionUpdate):
+async def update_session(
+    session_id: str,
+    update_data: SessionUpdate,
+    current_user: User = Depends(get_current_user)  # NEW: Require auth
+):
     """
-    Update session metadata (e.g., title)
+    Update session metadata (PROTECTED)
     
-    Args:
-        session_id: The session to update
-        update_data: Fields to update (currently only title)
-        
-    Returns:
-        Success message
-        
-    Raises:
-        404: If session not found
-        
-    Example:
-        PATCH /api/sessions/507f1f77bcf86cd799439011
-        {
-            "title": "Updated Session Title"
-        }
-        
-        Response:
-        {
-            "message": "Session updated successfully"
-        }
+    Only allows updating sessions that belong to the authenticated user
     """
     try:
-        logger.info(f"✏️ Updating session: {session_id}")
+        logger.info(f"✏️ Updating session: {session_id} by user: {current_user.username}")
         
+        # NEW: Verify ownership first
+        session = await session_service.get_session(session_id)
+        
+        if not session:
+            raise HTTPException(
+                status_code=404, 
+                detail=f"Session not found: {session_id}"
+            )
+        
+        if session.user_id != str(current_user.id):
+            logger.warning(
+                f"⚠️ User {current_user.username} attempted to update session {session_id} "
+                f"owned by user {session.user_id}"
+            )
+            raise HTTPException(
+                status_code=403,
+                detail="You don't have permission to update this session"
+            )
+        
+        # Proceed with update
         success = await session_service.update_session(
             session_id=session_id,
             title=update_data.title
         )
         
         if not success:
-            logger.warning(f"⚠️ Session not found for update: {session_id}")
             raise HTTPException(
-                status_code=404, 
-                detail=f"Session not found: {session_id}"
+                status_code=500, 
+                detail="Failed to update session"
             )
         
         logger.info(f"✅ Session updated successfully: {session_id}")
@@ -245,40 +157,44 @@ async def update_session(session_id: str, update_data: SessionUpdate):
 
 
 @router.delete("/{session_id}", response_model=dict)
-async def delete_session(session_id: str):
+async def delete_session(
+    session_id: str,
+    current_user: User = Depends(get_current_user)  # NEW: Require auth
+):
     """
-    Delete a session permanently
+    Delete a session (PROTECTED)
     
-    Args:
-        session_id: The session to delete
-        
-    Returns:
-        Success message
-        
-    Raises:
-        404: If session not found
-        
-    Warning:
-        This operation is permanent and cannot be undone!
-        
-    Example:
-        DELETE /api/sessions/507f1f77bcf86cd799439011
-        
-        Response:
-        {
-            "message": "Session deleted successfully"
-        }
+    Only allows deleting sessions that belong to the authenticated user
     """
     try:
-        logger.info(f"🗑️ Deleting session: {session_id}")
+        logger.info(f"🗑️ Deleting session: {session_id} by user: {current_user.username}")
         
-        success = await session_service.delete_session(session_id)
+        # NEW: Verify ownership first
+        session = await session_service.get_session(session_id)
         
-        if not success:
-            logger.warning(f"⚠️ Session not found for deletion: {session_id}")
+        if not session:
             raise HTTPException(
                 status_code=404, 
                 detail=f"Session not found: {session_id}"
+            )
+        
+        if session.user_id != str(current_user.id):
+            logger.warning(
+                f"⚠️ User {current_user.username} attempted to delete session {session_id} "
+                f"owned by user {session.user_id}"
+            )
+            raise HTTPException(
+                status_code=403,
+                detail="You don't have permission to delete this session"
+            )
+        
+        # Proceed with deletion
+        success = await session_service.delete_session(session_id)
+        
+        if not success:
+            raise HTTPException(
+                status_code=500, 
+                detail="Failed to delete session"
             )
         
         logger.info(f"✅ Session deleted successfully: {session_id}")
