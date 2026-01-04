@@ -1,4 +1,8 @@
 import { useState, useRef, useEffect } from "react";
+import { useAuth } from "./contexts/AuthContext";
+import AuthModal from "./components/AuthModal";
+import UserMenu from "./components/UserMenu";
+import { api } from "./utils/api";
 
 function App() {
   const [input, setInput] = useState("");
@@ -10,6 +14,8 @@ function App() {
   const [showSessions, setShowSessions] = useState(false);
   const messagesEndRef = useRef(null);
   const textareaRef = useRef(null);
+
+  const { isAuthenticated, loading: authLoading } = useAuth();
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -26,18 +32,17 @@ function App() {
     }
   }, [input]);
 
-  // Load sessions on mount
+  // Load sessions when authenticated
   useEffect(() => {
-    loadSessions();
-  }, []);
+    if (isAuthenticated) {
+      loadSessions();
+    }
+  }, [isAuthenticated]);
 
   const loadSessions = async () => {
     try {
-      const response = await fetch("http://localhost:8000/api/sessions/");
-      if (response.ok) {
-        const data = await response.json();
-        setSessions(data);
-      }
+      const data = await api.getSessions();
+      setSessions(data);
     } catch (err) {
       console.error("Failed to load sessions:", err);
     }
@@ -45,19 +50,20 @@ function App() {
 
   const loadSession = async (sessionId) => {
     try {
-      const response = await fetch(`http://localhost:8000/api/sessions/${sessionId}`);
-      if (response.ok) {
-        const session = await response.json();
-        setCurrentSessionId(sessionId);
-        setMessages(session.messages.map(msg => ({
-          type: msg.role === "user" ? "user" : "assistant",
-          content: msg.content,
-          timestamp: new Date(msg.timestamp)
-        })));
-        setShowSessions(false);
-      }
+      const session = await api.getSession(sessionId);
+      setCurrentSessionId(sessionId);
+      setMessages(session.messages.map(msg => ({
+        type: msg.role === "user" ? "user" : "assistant",
+        content: msg.content,
+        timestamp: new Date(msg.timestamp)
+      })));
+      setShowSessions(false);
     } catch (err) {
       console.error("Failed to load session:", err);
+      // Handle 403 errors (not owner)
+      if (err.message.includes('permission')) {
+        alert("You don't have access to this session");
+      }
     }
   };
 
@@ -70,14 +76,10 @@ function App() {
   const deleteSession = async (sessionId, e) => {
     e.stopPropagation();
     try {
-      const response = await fetch(`http://localhost:8000/api/sessions/${sessionId}`, {
-        method: "DELETE"
-      });
-      if (response.ok) {
-        loadSessions();
-        if (currentSessionId === sessionId) {
-          startNewChat();
-        }
+      await api.deleteSession(sessionId);
+      loadSessions();
+      if (currentSessionId === sessionId) {
+        startNewChat();
       }
     } catch (err) {
       console.error("Failed to delete session:", err);
@@ -94,21 +96,10 @@ function App() {
     setStatus("running");
 
     try {
-      const response = await fetch("http://localhost:8000/api/run", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          user_goal: userMessage.content,
-          session_id: currentSessionId 
-        }),
-      });
-
-      if (!response.ok) throw new Error(`Server error: ${response.status}`);
-
-      const data = await response.json();
+      const data = await api.runAgent(userMessage.content);
       
-      // Update session ID if new session was created
-      if (data.session_id && !currentSessionId) {
+      // Update session ID (new session created by backend)
+      if (data.session_id) {
         setCurrentSessionId(data.session_id);
         loadSessions();
       }
@@ -148,6 +139,25 @@ function App() {
   const handleExampleClick = (example) => {
     setInput(example);
   };
+
+  // Show auth modal if not authenticated
+  if (!isAuthenticated && !authLoading) {
+    return <AuthModal />;
+  }
+
+  // Show loading while checking auth
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-16 h-16 bg-gradient-to-br from-purple-600 to-pink-600 rounded-2xl flex items-center justify-center mb-4 mx-auto animate-pulse">
+            <span className="text-2xl text-white font-bold">M</span>
+          </div>
+          <p className="text-gray-400">Loading...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] flex">
@@ -212,12 +222,17 @@ function App() {
               </div>
               <h1 className="text-lg font-semibold text-white">Multi-Agent Orchestrator</h1>
             </div>
-            {status === "running" && (
-              <div className="flex items-center gap-2 text-sm text-gray-400">
-                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse shadow-lg shadow-green-500/50"></div>
-                <span>Processing...</span>
-              </div>
-            )}
+            
+            <div className="flex items-center gap-4">
+              {status === "running" && (
+                <div className="flex items-center gap-2 text-sm text-gray-400">
+                  <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse shadow-lg shadow-green-500/50"></div>
+                  <span>Processing...</span>
+                </div>
+              )}
+              {/* User Menu */}
+              <UserMenu />
+            </div>
           </div>
         </header>
 
