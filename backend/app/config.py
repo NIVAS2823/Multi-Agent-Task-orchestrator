@@ -7,8 +7,8 @@ class Settings:
     ENV = os.getenv("ENV", "development")
 
     # LangSmith
-    LANGCHAIN_TRACING_V2 = os.getenv("LANGCHAIN_TRACING_V2", "false")
-    LANGCHAIN_API_KEY = os.getenv("LANGCHAIN_API_KEY")
-    LANGCHAIN_PROJECT = os.getenv("LANGCHAIN_PROJECT")
+    LANGSMITH_TRACING = os.getenv("LANGSMITH_TRACING", "false")
+    LANGSMITH_API_KEY = os.getenv("LANGSMITH_API_KEY")
+    LANGSMITH_PROJECT = os.getenv("LANGSMITH_PROJECT")
 
 settings = Settings()
