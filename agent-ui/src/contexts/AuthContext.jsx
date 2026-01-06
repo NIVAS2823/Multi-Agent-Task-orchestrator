@@ -2,7 +2,10 @@ import { createContext, useContext, useState, useEffect } from 'react';
 
 const AuthContext = createContext(null);
 
-const API_BASE_URL = 'http://localhost:8000/api';
+// Use environment variable if available, fallback to production URL
+const API_BASE_URL = import.meta.env.VITE_API_URL 
+  ? `${import.meta.env.VITE_API_URL}`
+  : 'https://multi-agent-task-orchestrator-production.up.railway.app/api';
 
 export const useAuth = () => {
   const context = useContext(AuthContext);

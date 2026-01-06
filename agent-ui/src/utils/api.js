@@ -4,7 +4,10 @@
  * Automatically adds Authorization header to all requests
  */
 
-const API_BASE_URL = 'http://localhost:8000/api';
+// Use environment variable if available, fallback to production URL
+const API_BASE_URL = import.meta.env.VITE_API_URL 
+  ? `${import.meta.env.VITE_API_URL}`
+  : 'https://multi-agent-task-orchestrator-production.up.railway.app/api';
 
 /**
  * Get auth headers with token
@@ -36,7 +39,7 @@ const handleResponse = async (response) => {
   }
 
   if (!response.ok) {
-    const error = await response.json();
+    const error = await response.json().catch(() => ({ detail: 'Request failed' }));
     throw new Error(error.detail || 'Request failed');
   }
 
