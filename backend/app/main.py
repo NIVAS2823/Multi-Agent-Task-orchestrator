@@ -64,12 +64,18 @@ app = FastAPI(
     redoc_url="/redoc"
 )
 
+
+ALLOWED_ORIGINS = [
+    "https://multi-agent-task-orchestrator.vercel.app",
+    "http://localhost:5173"
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Update in production
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 

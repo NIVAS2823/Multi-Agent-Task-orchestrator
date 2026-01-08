@@ -1,6 +1,6 @@
 # 🤖 Multi-Agent Task Orchestrator
 
-An intelligent AI-powered task orchestration system that uses multiple specialized agents to collaboratively plan, research, execute, and review complex tasks. Built with LangGraph, FastAPI, and React.
+An intelligent AI-powered task orchestration system that uses multiple specialized agents to collaboratively plan, execute, and review complex tasks. Built with LangGraph, FastAPI, and React.
 
 Multi-Agent Orchestrator
 FastAPI
@@ -11,7 +11,6 @@ MongoDB
 
 ### 🎯 Multi-Agent Orchestration
 - **Planner Agent**: Creates step-by-step execution plans
-- **Researcher Agent**: Gathers information and conducts research
 - **Executor Agent**: Performs tasks based on the plan
 - **Critic Agent**: Reviews and validates outputs
 - **Supervisor Agent**: Orchestrates the entire workflow
