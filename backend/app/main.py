@@ -68,7 +68,10 @@ app = FastAPI(
 ALLOWED_ORIGINS = [
     "https://multi-agent-task-orchestrator.vercel.app",
     "http://localhost:5173",
-    "https://multi-agent-task-orchestrator-ersn0ep5x.vercel.app"
+    "https://multi-agent-task-orchestrator-ersn0ep5x.vercel.app",
+    "https://multi-agent-task-orchestrator-npoq2qv4h.vercel.app/",
+    "https://multi-agent-task-orchestra-git-594291-nivas-mididhodis-projects.vercel.app/"
+
 ]
 
 app.add_middleware(
